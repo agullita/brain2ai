@@ -123,7 +123,7 @@ const SECCIONES = [
       },
       {
         titulo: "Guárdala en la app",
-        texto: "En Grabar Reunión (o en Notebook y Correos) pulsa el engranaje de ajustes y pega la clave. Se guarda solo en tu navegador; nadie más la ve y no pasa por ningún servidor nuestro.",
+        texto: "Abre «Ajustes» en el menú lateral (o el engranaje de cada pantalla) y pega la clave. Se guarda solo en tu navegador; nadie más la ve y no pasa por ningún servidor nuestro. Cada persona que use la app pone la suya.",
       },
       {
         titulo: "Elige tu carpeta (opcional pero recomendado)",

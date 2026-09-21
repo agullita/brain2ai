@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
-import { ClipboardPaste, Upload, Sparkles, Loader2 } from "lucide-react";
+import { ClipboardPaste, Upload, Sparkles, Loader2, Settings } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import { summarizeMeeting } from "@/lib/ai.functions";
 import { saveMeeting, type Meeting } from "@/lib/idb";
 import { getDirHandle, writeMeetingToFolder } from "@/lib/folder";
 import { addCardsToInbox } from "@/lib/tasks";
+import { getGeminiKey, openApiKeySettings } from "@/lib/apiKey";
 
 export const Route = createFileRoute("/importar")({
   head: () => ({
@@ -99,9 +100,15 @@ function Importar() {
       toast.error("Pega primero la transcripción de la reunión.");
       return;
     }
+    const apiKey = getGeminiKey();
+    if (!apiKey) {
+      toast.error("Configura tu clave de Gemini en Ajustes");
+      openApiKeySettings();
+      return;
+    }
     setBusy(true);
     try {
-      const res = await doSummarize({ data: { transcript, notes: "", style } });
+      const res = await doSummarize({ data: { transcript, notes: "", style, apiKey } });
       const meeting: Meeting = {
         id: crypto.randomUUID(),
         title: title.trim() || `Transcripción importada ${new Date().toLocaleDateString("es-ES")}`,
@@ -136,15 +143,21 @@ function Importar() {
   return (
     <div className="mx-auto w-full max-w-3xl p-6">
       <Toaster />
-      <header className="mb-6">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold">
-          <ClipboardPaste className="size-6 text-primary" />
-          Importar transcripción
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Pega el texto de una reunión de Teams, Meet o Zoom (o sube el archivo .txt, .vtt o .srt) y
-          genera el acta con sus tareas, sin necesidad de grabar.
-        </p>
+      <header className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold">
+            <ClipboardPaste className="size-6 text-primary" />
+            Importar transcripción
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pega el texto de una reunión de Teams, Meet o Zoom (o sube el archivo .txt, .vtt o .srt) y
+            genera el acta con sus tareas, sin necesidad de grabar.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={openApiKeySettings} title="Ajustes · clave de IA">
+          <Settings className="mr-2 size-4" />
+          Ajustes
+        </Button>
       </header>
 
       <div className="space-y-4 rounded-lg border bg-card p-4">

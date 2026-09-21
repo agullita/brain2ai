@@ -14,6 +14,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  Settings,
   Upload,
   X,
 } from "lucide-react";
@@ -21,9 +22,11 @@ import { toast } from "sonner";
 
 import logoUrl from "@/assets/logo.png";
 import { GlobalSearch, openGlobalSearch } from "@/components/GlobalSearch";
+import { ApiKeyDialog } from "@/components/ApiKeyDialog";
 import { estimateUsage, formatBytes } from "@/lib/idb";
 import { downloadBackup, restoreBackup } from "@/lib/backup";
 import { folderSupported, getDirHandle, pickFolder, setDirHandle } from "@/lib/folder";
+import { KEY_CHANGED_EVENT, OPEN_SETTINGS_EVENT, getGeminiKey } from "@/lib/apiKey";
 
 const COLLAPSED_KEY = "acta-local-menu-collapsed";
 
@@ -46,7 +49,22 @@ export function AppMenu() {
   const [collapsed, setCollapsed] = useState(false);
   const [folderName, setFolderName] = useState<string | null>(null);
   const [usage, setUsage] = useState({ usage: 0, quota: 0 });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hasKey, setHasKey] = useState(false);
   const restoreRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const syncKey = () => setHasKey(Boolean(getGeminiKey()));
+    syncKey();
+    window.addEventListener(KEY_CHANGED_EVENT, syncKey);
+    return () => window.removeEventListener(KEY_CHANGED_EVENT, syncKey);
+  }, []);
+
+  useEffect(() => {
+    const openSettings = () => setSettingsOpen(true);
+    window.addEventListener(OPEN_SETTINGS_EVENT, openSettings);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, openSettings);
+  }, []);
 
   useEffect(() => {
     const stored = localStorage.getItem(COLLAPSED_KEY);
@@ -229,6 +247,22 @@ export function AppMenu() {
           </div>
         )}
 
+        <button
+          onClick={() => setSettingsOpen(true)}
+          title={hasKey ? "Ajustes: clave de IA guardada" : "Ajustes: falta tu clave de IA"}
+          className={`relative flex w-full items-center gap-2 rounded-lg border py-2 text-xs font-medium transition-colors ${
+            hasKey
+              ? "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+              : "border-primary/60 text-primary hover:bg-primary/10"
+          } ${collapsed ? "justify-center" : "justify-center px-3"}`}
+        >
+          <Settings className="size-4 shrink-0" />
+          {!collapsed && (hasKey ? "Ajustes (clave IA)" : "Ajustes · falta tu clave")}
+          {!hasKey && (
+            <span className="absolute right-2 top-2 size-2 rounded-full bg-primary" />
+          )}
+        </button>
+
         <input
           ref={restoreRef}
           type="file"
@@ -288,6 +322,8 @@ export function AppMenu() {
           )}
         </button>
       </div>
+
+      <ApiKeyDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </aside>
   );
 }

@@ -7,9 +7,12 @@ const API = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:ge
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
-async function gemini(parts: Part[], label: string, system?: string) {
-  const key = process.env["GEMINI_API_KEY"];
-  if (!key) throw new Error("Falta la clave de Gemini. Guárdala en los secretos del proyecto.");
+async function gemini(parts: Part[], label: string, apiKey?: string, system?: string) {
+  // Clave del propio usuario (enviada desde su navegador). El secreto del
+  // proyecto queda solo como respaldo opcional.
+  const key = apiKey?.trim() || process.env["GEMINI_API_KEY"];
+  if (!key)
+    throw new Error("Falta tu clave de Gemini. Pégala en Ajustes (menú lateral → Ajustes).");
 
   const res = await fetch(`${API}?key=${key}`, {
     method: "POST",
@@ -39,7 +42,7 @@ async function gemini(parts: Part[], label: string, system?: string) {
 }
 
 export const transcribeChunk = createServerFn({ method: "POST" })
-  .inputValidator((data: { audio: string; sample?: string; speakers?: boolean }) => data)
+  .inputValidator((data: { audio: string; sample?: string; speakers?: boolean; apiKey?: string }) => data)
   .handler(async ({ data }) => {
     const parts: Part[] = [];
     let instruction =
@@ -61,13 +64,13 @@ export const transcribeChunk = createServerFn({ method: "POST" })
     }
     parts.push({ text: instruction });
 
-    const text = await gemini(parts, "Transcripción fallida");
+    const text = await gemini(parts, "Transcripción fallida", data.apiKey);
     const clean = text.trim().replace(/^<[^>]*>$/g, "").trim();
     return { text: clean };
   });
 
 export const summarizeMeeting = createServerFn({ method: "POST" })
-  .inputValidator((data: { transcript: string; notes: string; style: string }) => data)
+  .inputValidator((data: { transcript: string; notes: string; style: string; apiKey?: string }) => data)
   .handler(async ({ data }) => {
     const raw = await gemini(
       [
@@ -76,13 +79,14 @@ export const summarizeMeeting = createServerFn({ method: "POST" })
         },
       ],
       "Resumen fallido",
+      data.apiKey,
       "Eres un secretario de actas. A partir de una transcripción (que puede tener errores de reconocimiento), redacta en español un acta clara en Markdown con estas secciones: **Resumen** (3-5 líneas), **Puntos clave** (viñetas), **Decisiones**, **Tareas** (con responsable si se menciona y plazo si se menciona) y **Dudas abiertas**. Si algo no aparece en la transcripción, escribe 'No consta'. No inventes datos.\n\nAdemás del resumen, extrae las acciones concretas a realizar. Devuelve esta lista de tareas estrictamente como un array de objetos JSON al final de tu respuesta, con este formato exacto:\n```json\n[{\"title\": \"Acción en infinitivo\", \"description\": \"Contexto breve\"}]\n```\nSi no hay acciones concretas, devuelve un array vacío [].",
     );
     return { summary: stripTaskBlock(raw), tasks: parseTasksFromText(raw) };
   });
 
 export const askMeeting = createServerFn({ method: "POST" })
-  .inputValidator((data: { transcript: string; question: string }) => data)
+  .inputValidator((data: { transcript: string; question: string; apiKey?: string }) => data)
   .handler(async ({ data }) => {
     const answer = await gemini(
       [
@@ -91,6 +95,7 @@ export const askMeeting = createServerFn({ method: "POST" })
         },
       ],
       "Consulta fallida",
+      data.apiKey,
       "Respondes preguntas sobre la transcripción de una reunión. Responde en español, breve y concreto. Si la respuesta no está en la transcripción, dilo claramente.",
     );
     return { answer };

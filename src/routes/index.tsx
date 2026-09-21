@@ -15,6 +15,7 @@ import {
   Search,
   Upload,
   ListTodo,
+  Settings,
 } from "lucide-react";
 import { marked } from "marked";
 import { exportPdf, exportWordDoc } from "@/lib/export-doc";
@@ -46,6 +47,7 @@ import { clearVoiceSample, getVoiceSample, recordVoiceSample } from "@/lib/voice
 import { getDirHandle, writeMeetingToFolder } from "@/lib/folder";
 import { addCardsToInbox } from "@/lib/tasks";
 import type { ExtractedTask } from "@/lib/tasks-parse";
+import { getGeminiKey, openApiKeySettings } from "@/lib/apiKey";
 
 /** Contenido del acta (y transcripción) como HTML para exportar a PDF/Word. */
 function meetingExportHtml(m: Meeting): string {
@@ -143,8 +145,18 @@ function Index() {
     if (has) setSpeakers(true);
   }, []);
 
-  async function calibrate() {
-    setCalibrating(true);
+  /** Devuelve la clave del usuario o abre Ajustes si falta. */
+  function requireKey(): string | null {
+    const key = getGeminiKey();
+    if (!key) {
+      toast.error("Configura tu clave de Gemini para usar la IA");
+      openApiKeySettings();
+      return null;
+    }
+    return key;
+  }
+
+  async function calibrate() {    setCalibrating(true);
     try {
       await recordVoiceSample(8, setLevel);
       setHasVoice(true);
@@ -182,8 +194,14 @@ function Index() {
       try {
         const audio = await blobToBase64(wav);
         const sample = speakers ? (getVoiceSample() ?? undefined) : undefined;
+        const apiKey = getGeminiKey();
         const res = await doTranscribe({
-          data: { audio, ...(sample ? { sample } : {}), speakers },
+          data: {
+            audio,
+            ...(sample ? { sample } : {}),
+            speakers,
+            ...(apiKey ? { apiKey } : {}),
+          },
         });
         const text = res.text.trim();
         if (text) {
@@ -211,6 +229,7 @@ function Index() {
   }, [recording]);
 
   async function start() {
+    if (!requireKey()) return;
     try {
       liveRef.current = "";
       chainRef.current = Promise.resolve();
@@ -259,6 +278,7 @@ function Index() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function upload(file: File) {
+    if (!requireKey()) return;
     setBusy("Transcribiendo el audio subido…");
     try {
       liveRef.current = "";
@@ -296,6 +316,8 @@ function Index() {
       toast.error("Esta reunión no tiene transcripción.");
       return;
     }
+    const key = requireKey();
+    if (!key) return;
     setBusy("Redactando el acta…");
     try {
       const res = await doSummarize({
@@ -303,6 +325,7 @@ function Index() {
           transcript: m.transcript,
           notes: m.notes.map((n) => `[${formatDuration(n.t)}] ${n.text}`).join("\n"),
           style,
+          apiKey: key,
         },
       });
       await saveMeeting({ ...m, summary: res.summary });
@@ -321,6 +344,8 @@ function Index() {
   }
 
   async function extractTasks(m: Meeting) {
+    const key = requireKey();
+    if (!key) return;
     setBusy("Buscando tareas en la reunión…");
     try {
       let tasks = tasksById[m.id];
@@ -330,6 +355,7 @@ function Index() {
             transcript: m.transcript,
             notes: m.notes.map((n) => `[${formatDuration(n.t)}] ${n.text}`).join("\n"),
             style,
+            apiKey: key,
           },
         });
         tasks = res.tasks;
@@ -347,9 +373,11 @@ function Index() {
 
   async function ask(m: Meeting) {
     if (!question.trim()) return;
+    const key = requireKey();
+    if (!key) return;
     setBusy("Buscando en la transcripción…");
     try {
-      const res = await doAsk({ data: { transcript: m.transcript, question } });
+      const res = await doAsk({ data: { transcript: m.transcript, question, apiKey: key } });
       setAnswer(res.answer);
       setQuestion("");
     } catch (e) {
@@ -387,11 +415,21 @@ function Index() {
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Nueva grabación
               </h2>
-              {recording && (
-                <Badge variant="destructive" className="animate-pulse">
-                  REC {formatDuration(elapsed)}
-                </Badge>
-              )}
+              <div className="flex items-center gap-2">
+                {recording && (
+                  <Badge variant="destructive" className="animate-pulse">
+                    REC {formatDuration(elapsed)}
+                  </Badge>
+                )}
+                <button
+                  type="button"
+                  onClick={openApiKeySettings}
+                  title="Ajustes · clave de IA"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Settings className="size-4" />
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 space-y-3">

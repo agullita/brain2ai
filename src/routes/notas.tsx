@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { transcribeChunk } from "@/lib/ai.functions";
+import { getGeminiKey, openApiKeySettings } from "@/lib/apiKey";
 import { getDirHandle, writeMeetingToFolder } from "@/lib/folder";
 import { saveMeeting, type Meeting } from "@/lib/idb";
 import { startRecording, type RecorderHandle } from "@/lib/recorder";
@@ -82,8 +83,6 @@ export const Route = createFileRoute("/notas")({
     ],
   }),
 });
-
-const KEY_LS = "acta-local-gemini-key";
 
 function renderMarkdown(md: string): string {
   const html = marked.parse(md, { async: false, gfm: true, breaks: true }) as string;
@@ -295,9 +294,10 @@ function SecondBrain() {
 
   async function extractToKanban() {
     if (!active) return;
-    const key = localStorage.getItem(KEY_LS)?.trim();
+    const key = getGeminiKey();
     if (!key) {
-      toast.error("Falta tu clave de Gemini. Guárdala en los ajustes de Correos HTML.");
+      toast.error("Configura tu clave de Gemini en Ajustes");
+      openApiKeySettings();
       return;
     }
     if (!active.content.trim()) {
@@ -366,7 +366,10 @@ function SecondBrain() {
     chainRef.current = chainRef.current.then(async () => {
       try {
         const audio = await blobToBase64(wav);
-        const res = await doTranscribe({ data: { audio, speakers: true } });
+        const apiKey = getGeminiKey();
+        const res = await doTranscribe({
+          data: { audio, speakers: true, ...(apiKey ? { apiKey } : {}) },
+        });
         const text = res.text.trim();
         if (text) {
           liveRef.current = `${liveRef.current} ${text}`.trim();
@@ -405,9 +408,10 @@ function SecondBrain() {
   /** Combina las notas manuales y la transcripción en un acta final con Gemini. */
   async function synthesize() {
     if (!active) return;
-    const key = localStorage.getItem(KEY_LS)?.trim();
+    const key = getGeminiKey();
     if (!key) {
-      toast.error("Falta tu clave de Gemini. Guárdala en los ajustes.");
+      toast.error("Configura tu clave de Gemini en Ajustes");
+      openApiKeySettings();
       return;
     }
     if (recording) await stopRec();

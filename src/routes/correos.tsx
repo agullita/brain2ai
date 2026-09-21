@@ -20,6 +20,7 @@ import {
   readJsonFromFolder,
   writeJsonToFolder,
 } from "@/lib/folder";
+import { GEMINI_KEY_LS as KEY_LS, KEY_CHANGED_EVENT } from "@/lib/apiKey";
 
 export const Route = createFileRoute("/correos")({
   component: EmailCompiler,
@@ -46,7 +47,6 @@ export const Route = createFileRoute("/correos")({
   }),
 });
 
-const KEY_LS = "acta-local-gemini-key";
 const DRAFT_LS = "acta-local-correo";
 const FILE_NAME = "correo.json";
 
@@ -211,6 +211,13 @@ function EmailCompiler() {
     };
     window.addEventListener("acta-folder", sync);
     return () => window.removeEventListener("acta-folder", sync);
+  }, []);
+
+  // Si la clave se cambia desde los ajustes globales, refrescamos el estado.
+  useEffect(() => {
+    const syncKey = () => setHasKey(Boolean(localStorage.getItem(KEY_LS)));
+    window.addEventListener(KEY_CHANGED_EVENT, syncKey);
+    return () => window.removeEventListener(KEY_CHANGED_EVENT, syncKey);
   }, []);
 
   const saveKey = useCallback(() => {
