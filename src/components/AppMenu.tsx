@@ -26,7 +26,12 @@ import { ApiKeyDialog } from "@/components/ApiKeyDialog";
 import { estimateUsage, formatBytes } from "@/lib/idb";
 import { downloadBackup, restoreBackup } from "@/lib/backup";
 import { folderSupported, getDirHandle, pickFolder, setDirHandle } from "@/lib/folder";
-import { KEY_CHANGED_EVENT, OPEN_SETTINGS_EVENT, getGeminiKey } from "@/lib/apiKey";
+import {
+  KEY_CHANGED_EVENT,
+  OPEN_SETTINGS_EVENT,
+  getGeminiKey,
+  syncKeyWithFolder,
+} from "@/lib/apiKey";
 
 const COLLAPSED_KEY = "acta-local-menu-collapsed";
 
@@ -64,6 +69,14 @@ export function AppMenu() {
     const openSettings = () => setSettingsOpen(true);
     window.addEventListener(OPEN_SETTINGS_EVENT, openSettings);
     return () => window.removeEventListener(OPEN_SETTINGS_EVENT, openSettings);
+  }, []);
+
+  // La carpeta local es la fuente de la clave: al arrancar y al cambiarla.
+  useEffect(() => {
+    void syncKeyWithFolder();
+    const onFolder = () => void syncKeyWithFolder();
+    window.addEventListener("acta-folder", onFolder);
+    return () => window.removeEventListener("acta-folder", onFolder);
   }, []);
 
   useEffect(() => {
@@ -145,13 +158,7 @@ export function AppMenu() {
       {/* Cabecera */}
       <div className={`border-b border-border/70 ${collapsed ? "p-3" : "p-5 pb-4"}`}>
         <div className={`flex items-center gap-3 ${collapsed ? "justify-center" : ""}`}>
-          <img
-            src={logoUrl}
-            alt="Brain2ai"
-            width={36}
-            height={36}
-            className="size-9 shrink-0"
-          />
+          <img src={logoUrl} alt="Brain2ai" width={36} height={36} className="size-9 shrink-0" />
           {!collapsed && (
             <div className="min-w-0">
               <p className="font-display text-sm font-semibold leading-none tracking-tight">
@@ -258,9 +265,7 @@ export function AppMenu() {
         >
           <Settings className="size-4 shrink-0" />
           {!collapsed && (hasKey ? "Ajustes (clave IA)" : "Ajustes · falta tu clave")}
-          {!hasKey && (
-            <span className="absolute right-2 top-2 size-2 rounded-full bg-primary" />
-          )}
+          {!hasKey && <span className="absolute right-2 top-2 size-2 rounded-full bg-primary" />}
         </button>
 
         <input

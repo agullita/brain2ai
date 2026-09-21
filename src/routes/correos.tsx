@@ -20,7 +20,7 @@ import {
   readJsonFromFolder,
   writeJsonToFolder,
 } from "@/lib/folder";
-import { GEMINI_KEY_LS as KEY_LS, KEY_CHANGED_EVENT } from "@/lib/apiKey";
+import { GEMINI_KEY_LS as KEY_LS, KEY_CHANGED_EVENT, saveKeyToFolder } from "@/lib/apiKey";
 
 export const Route = createFileRoute("/correos")({
   component: EmailCompiler,
@@ -224,6 +224,7 @@ function EmailCompiler() {
     const k = apiKey.trim();
     if (k) localStorage.setItem(KEY_LS, k);
     else localStorage.removeItem(KEY_LS);
+    void saveKeyToFolder(k || null);
     setHasKey(Boolean(k));
     setApiKey("");
     setSettings(false);
@@ -643,6 +644,7 @@ function EmailCompiler() {
                 variant="ghost"
                 onClick={() => {
                   localStorage.removeItem(KEY_LS);
+                  void saveKeyToFolder(null);
                   setHasKey(false);
                   toast("Clave borrada");
                 }}

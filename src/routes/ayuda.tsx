@@ -123,7 +123,7 @@ const SECCIONES = [
       },
       {
         titulo: "Guárdala en la app",
-        texto: "Abre «Ajustes» en el menú lateral (o el engranaje de cada pantalla) y pega la clave. Se guarda solo en tu navegador; nadie más la ve y no pasa por ningún servidor nuestro. Cada persona que use la app pone la suya.",
+        texto: "Abre «Ajustes» en el menú lateral (o el engranaje de cada pantalla) y pega la clave. Se guarda en tu navegador y, si tienes una carpeta local elegida, también en un archivo ajustes.json de esa carpeta. Cada persona que use la app pone la suya.",
       },
       {
         titulo: "Elige tu carpeta (opcional pero recomendado)",
@@ -365,7 +365,7 @@ const SECCIONES = [
       },
       {
         titulo: "Los archivos .json",
-        texto: "En tu carpeta verás archivos como tareas.json y notas.json. Son texto legible: puedes abrirlos, copiarlos a otro ordenador o archivarlos como copia de seguridad.",
+        texto: "En tu carpeta verás archivos como tareas.json, notas.json, correo.json y ajustes.json (con tu clave de Gemini). Son texto legible: puedes abrirlos, copiarlos a otro ordenador o archivarlos como copia de seguridad.",
       },
       {
         titulo: "Cambiar o soltar la carpeta",

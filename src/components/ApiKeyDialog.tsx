@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { KeyRound, Loader2 } from "lucide-react";
+import { FolderOpen, KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { getGeminiKey, setGeminiKey } from "@/lib/apiKey";
+import { getGeminiKey, saveKeyToFolder, setGeminiKey, syncKeyWithFolder } from "@/lib/apiKey";
 
 /**
  * Diálogo para que cada usuario introduzca su propia clave de Gemini.
- * La clave se guarda únicamente en el navegador (localStorage) del usuario.
+ * Se guarda en el navegador y, si hay carpeta local, en su `ajustes.json`.
  */
 export function ApiKeyDialog({
   open,
@@ -28,15 +28,21 @@ export function ApiKeyDialog({
   const [value, setValue] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [folderName, setFolderName] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    setValue("");
+    void (async () => {
+      const { getDirHandle } = await import("@/lib/folder");
+      const dir = await getDirHandle();
+      setFolderName(dir?.name ?? null);
+      await syncKeyWithFolder();
       setHasKey(Boolean(getGeminiKey()));
-      setValue("");
-    }
+    })();
   }, [open]);
 
-  function save() {
+  async function save() {
     const k = value.trim();
     if (!k) {
       toast.error("Escribe tu clave de Gemini");
@@ -44,15 +50,23 @@ export function ApiKeyDialog({
     }
     setBusy(true);
     setGeminiKey(k);
+    const savedToFolder = await saveKeyToFolder(k);
+    setBusy(false);
     setHasKey(true);
     setValue("");
-    setBusy(false);
     onOpenChange(false);
-    toast.success("Clave guardada en este ordenador");
+    toast.success(
+      savedToFolder
+        ? `Clave guardada en tu carpeta (${folderName ?? "ajustes.json"})`
+        : "Clave guardada en este navegador",
+    );
   }
 
-  function remove() {
+  async function remove() {
+    setBusy(true);
     setGeminiKey(null);
+    await saveKeyToFolder(null);
+    setBusy(false);
     setHasKey(false);
     toast("Clave borrada");
   }
@@ -66,8 +80,7 @@ export function ApiKeyDialog({
             Tu clave de Gemini
           </DialogTitle>
           <DialogDescription>
-            Hace falta para transcribir, resumir y redactar con IA. Se guarda solo en este ordenador
-            (nunca en nuestros servidores). Consíguela gratis en{" "}
+            Hace falta para transcribir, resumir y redactar con IA. Consíguela gratis en{" "}
             <span className="font-medium text-foreground">aistudio.google.com</span> → «Get API
             key».
           </DialogDescription>
@@ -78,7 +91,7 @@ export function ApiKeyDialog({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") save();
+            if (e.key === "Enter") void save();
           }}
           placeholder={
             hasKey
@@ -86,15 +99,30 @@ export function ApiKeyDialog({
               : "Pega aquí tu clave de API de Gemini"
           }
         />
+        <p className="flex items-start gap-2 rounded-lg bg-muted/50 p-2.5 text-xs text-muted-foreground">
+          <FolderOpen className="mt-0.5 size-3.5 shrink-0" />
+          {folderName ? (
+            <span>
+              Se guardará en la carpeta{" "}
+              <span className="font-medium text-foreground">{folderName}</span> (archivo{" "}
+              <span className="font-mono">ajustes.json</span>) y en este navegador.
+            </span>
+          ) : (
+            <span>
+              Se guardará en este navegador. Si eliges una carpeta local en el menú, también se
+              guardará ahí como <span className="font-mono">ajustes.json</span>.
+            </span>
+          )}
+        </p>
         <DialogFooter className="gap-2 sm:justify-between">
           {hasKey ? (
-            <Button variant="ghost" onClick={remove}>
+            <Button variant="ghost" onClick={() => void remove()} disabled={busy}>
               Borrar clave
             </Button>
           ) : (
             <span />
           )}
-          <Button onClick={save} disabled={busy}>
+          <Button onClick={() => void save()} disabled={busy}>
             {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
             Guardar
           </Button>
