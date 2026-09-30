@@ -1,8 +1,10 @@
 // Copia de seguridad de toda la información local (sin salir del ordenador).
 
 import { deleteMeeting, listMeetings, saveMeeting } from "@/lib/idb";
+import { GEMINI_KEY_LS, OPENAI_KEY_LS } from "@/lib/apiKey";
 
-const CLAVE_API = "acta-local-gemini-key";
+// Las claves de IA nunca entran en la copia de seguridad.
+const SECRET_KEYS = new Set([GEMINI_KEY_LS, OPENAI_KEY_LS]);
 
 export type Backup = {
   app: "acta-local";
@@ -17,7 +19,7 @@ export async function buildBackup(): Promise<Backup> {
   const storage: Record<string, string> = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    if (!k || !k.startsWith("acta-") || k === CLAVE_API) continue;
+    if (!k || !k.startsWith("acta-") || SECRET_KEYS.has(k)) continue;
     const v = localStorage.getItem(k);
     if (v !== null) storage[k] = v;
   }
@@ -78,7 +80,7 @@ export async function restoreBackup(file: File): Promise<{ storage: number; meet
   // 1. Ajustes, notas, tareas y correos (localStorage).
   for (let i = localStorage.length - 1; i >= 0; i--) {
     const k = localStorage.key(i);
-    if (k && k.startsWith("acta-") && k !== CLAVE_API) localStorage.removeItem(k);
+    if (k && k.startsWith("acta-") && !SECRET_KEYS.has(k)) localStorage.removeItem(k);
   }
   for (const [k, v] of Object.entries(data.storage)) {
     localStorage.setItem(k, v);

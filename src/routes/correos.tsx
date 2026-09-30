@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, Loader2, Mail, Plus, Settings, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { Copy, KeyRound, Loader2, Mail, Plus, Settings, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,8 @@ import {
   readJsonFromFolder,
   writeJsonToFolder,
 } from "@/lib/folder";
-import { GEMINI_KEY_LS as KEY_LS, KEY_CHANGED_EVENT, saveKeyToFolder } from "@/lib/apiKey";
+import { getActiveKey, getAiProvider, KEY_CHANGED_EVENT, openApiKeySettings } from "@/lib/apiKey";
+import { aiChat } from "@/lib/ai.functions";
 
 export const Route = createFileRoute("/correos")({
   component: EmailCompiler,
@@ -138,11 +140,11 @@ function EmailCompiler() {
   const [designBusy, setDesignBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [settings, setSettings] = useState(false);
-  const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [ready, setReady] = useState(false);
   const dirRef = useRef<any>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const doChat = useServerFn(aiChat);
 
   const set = useCallback(<K extends keyof Draft>(k: K, v: Draft[K]) => {
     setDraft((d) => ({ ...d, [k]: v }));
@@ -152,7 +154,7 @@ function EmailCompiler() {
   useEffect(() => {
     let cancel = false;
     (async () => {
-      setHasKey(Boolean(localStorage.getItem(KEY_LS)));
+      setHasKey(Boolean(getActiveKey()));
       let loaded: Draft | null = null;
       const h = await getDirHandle();
       if (h) {
@@ -215,27 +217,17 @@ function EmailCompiler() {
 
   // Si la clave se cambia desde los ajustes globales, refrescamos el estado.
   useEffect(() => {
-    const syncKey = () => setHasKey(Boolean(localStorage.getItem(KEY_LS)));
+    const syncKey = () => setHasKey(Boolean(getActiveKey()));
     window.addEventListener(KEY_CHANGED_EVENT, syncKey);
     return () => window.removeEventListener(KEY_CHANGED_EVENT, syncKey);
   }, []);
 
-  const saveKey = useCallback(() => {
-    const k = apiKey.trim();
-    if (k) localStorage.setItem(KEY_LS, k);
-    else localStorage.removeItem(KEY_LS);
-    void saveKeyToFolder(k || null);
-    setHasKey(Boolean(k));
-    setApiKey("");
-    setSettings(false);
-    toast.success(k ? "Clave guardada en este ordenador" : "Clave borrada");
-  }, [apiKey]);
-
   const writeWithAi = useCallback(async () => {
-    const key = localStorage.getItem(KEY_LS);
-    if (!key) {
-      toast.error("Configura tu clave de API de Gemini en los ajustes");
-      setSettings(true);
+    const provider = getAiProvider();
+    const apiKey = getActiveKey();
+    if (!apiKey) {
+      toast.error(`Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} en Ajustes`);
+      openApiKeySettings();
       return;
     }
     if (!prompt.trim()) {
@@ -244,35 +236,17 @@ function EmailCompiler() {
     }
     setBusy(true);
     try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text:
-                      "Actúa como un redactor corporativo. Escribe un correo profesional en formato HTML basado en esto: " +
-                      prompt,
-                  },
-                ],
-              },
-            ],
-          }),
+      const res = await doChat({
+        data: {
+          provider,
+          apiKey,
+          label: "Redactar correo",
+          prompt:
+            "Actúa como un redactor corporativo. Escribe un correo profesional en formato HTML basado en esto: " +
+            prompt,
         },
-      );
-      if (!res.ok) {
-        if (res.status === 400 || res.status === 403) throw new Error("La clave no es válida");
-        if (res.status === 429) throw new Error("Has llegado al límite de tu cuenta de Gemini");
-        throw new Error("No se pudo redactar el correo");
-      }
-      const data = (await res.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      };
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      });
+      const text = res.text;
       if (!text.trim()) throw new Error("La IA no devolvió texto");
       set("body", text.replace(/^```html\s*/i, "").replace(/```\s*$/, "").trim());
       toast.success("Borrador redactado");
@@ -281,13 +255,14 @@ function EmailCompiler() {
     } finally {
       setBusy(false);
     }
-  }, [prompt, set]);
+  }, [prompt, set, doChat]);
 
   const applyDesign = useCallback(async () => {
-    const key = localStorage.getItem(KEY_LS);
-    if (!key) {
-      toast.error("Configura tu clave de API de Gemini en los ajustes");
-      setSettings(true);
+    const provider = getAiProvider();
+    const apiKey = getActiveKey();
+    if (!apiKey) {
+      toast.error(`Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} en Ajustes`);
+      openApiKeySettings();
       return;
     }
     if (!designPrompt.trim()) {
@@ -301,7 +276,7 @@ function EmailCompiler() {
       const instruction = [
         "Eres experto en maquetar correos HTML compatibles con Outlook.",
         "Devuelve SOLO el código HTML final, sin explicaciones ni markdown.",
-        "Usa tablas, todo el CSS en línea con style=\"...\", ancho máximo 600px.",
+        'Usa tablas, todo el CSS en línea con style="...", ancho máximo 600px.',
         `Colores de marca disponibles (úsalos): ${colors}. Color principal: ${draft.color}.`,
         "Conserva el contenido del correo actual salvo que se indique lo contrario.",
         "",
@@ -311,23 +286,10 @@ function EmailCompiler() {
         "PETICIÓN DE DISEÑO (puede ser una descripción o un HTML de ejemplo a imitar):",
         designPrompt,
       ].join("\n");
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contents: [{ parts: [{ text: instruction }] }] }),
-        },
-      );
-      if (!res.ok) {
-        if (res.status === 400 || res.status === 403) throw new Error("La clave no es válida");
-        if (res.status === 429) throw new Error("Has llegado al límite de tu cuenta de Gemini");
-        throw new Error("No se pudo aplicar el diseño");
-      }
-      const data = (await res.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      };
-      const text = (data.candidates?.[0]?.content?.parts?.[0]?.text ?? "")
+      const res = await doChat({
+        data: { provider, apiKey, label: "Aplicar diseño", prompt: instruction },
+      });
+      const text = res.text
         .replace(/^```html\s*/i, "")
         .replace(/```\s*$/, "")
         .trim();
@@ -339,7 +301,7 @@ function EmailCompiler() {
     } finally {
       setDesignBusy(false);
     }
-  }, [designPrompt, draft, set]);
+  }, [designPrompt, draft, set, doChat]);
 
   const html = draft.customHtml.trim() || buildHtml(draft);
 
@@ -409,11 +371,11 @@ function EmailCompiler() {
               ) : (
                 <Sparkles className="mr-2 size-4" />
               )}
-              Redactar con Gemini
+              Redactar con IA
             </Button>
             {!hasKey && (
               <p className="mt-2 text-xs text-muted-foreground">
-                Añade tu clave de Gemini en los ajustes para usar la IA.
+                Añade tu clave de IA (Gemini u OpenAI) en Ajustes para usar el asistente.
               </p>
             )}
           </section>
@@ -474,7 +436,7 @@ function EmailCompiler() {
               ) : (
                 <Wand2 className="mr-2 size-4" />
               )}
-              Aplicar diseño con Gemini
+              Aplicar diseño con IA
             </Button>
             {draft.customHtml.trim() && (
               <Button
@@ -558,15 +520,22 @@ function EmailCompiler() {
           <DialogHeader>
             <DialogTitle>Ajustes</DialogTitle>
             <DialogDescription>
-              La clave y los colores se guardan solo en este ordenador (y en tu carpeta local).
+              Los colores se guardan solo en este ordenador (y en tu carpeta local).
             </DialogDescription>
           </DialogHeader>
-          <Input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={hasKey ? "Clave guardada · escribe otra para cambiarla" : "Clave de API de Gemini"}
-          />
+          <button
+            type="button"
+            onClick={() => {
+              setSettings(false);
+              openApiKeySettings();
+            }}
+            className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <KeyRound className="size-4" />
+            {hasKey
+              ? "Clave de IA configurada · cambiar proveedor o clave"
+              : "Configurar tu clave de IA (Gemini u OpenAI)"}
+          </button>
 
           <div className="space-y-2 border-t border-border/70 pt-4">
             <div className="flex items-center justify-between">
@@ -639,20 +608,7 @@ function EmailCompiler() {
             </Button>
           </div>
           <DialogFooter>
-            {hasKey && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  localStorage.removeItem(KEY_LS);
-                  void saveKeyToFolder(null);
-                  setHasKey(false);
-                  toast("Clave borrada");
-                }}
-              >
-                Borrar clave
-              </Button>
-            )}
-            <Button onClick={saveKey}>Guardar</Button>
+            <Button onClick={() => setSettings(false)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -114,16 +114,16 @@ const SECCIONES = [
   {
     id: "inicio",
     icon: KeyRound,
-    titulo: "Primeros pasos: clave de Gemini y carpeta local",
+    titulo: "Primeros pasos: clave de IA y carpeta local",
     intro: "Configura la app en dos minutos antes de empezar.",
     pasos: [
       {
-        titulo: "Consigue tu clave de Gemini",
-        texto: "Entra en Google AI Studio (aistudio.google.com), inicia sesión con tu cuenta de Google y pulsa «Get API key» para crear una clave gratuita. Cópiala.",
+        titulo: "Consigue tu clave de IA",
+        texto: "Elige proveedor: Gemini (Google AI Studio, aistudio.google.com → «Get API key», gratis) u OpenAI (platform.openai.com → API keys). Copia la clave.",
       },
       {
         titulo: "Guárdala en la app",
-        texto: "Abre «Ajustes» en el menú lateral (o el engranaje de cada pantalla) y pega la clave. Se guarda en tu navegador y, si tienes una carpeta local elegida, también en un archivo ajustes.json de esa carpeta. Cada persona que use la app pone la suya.",
+        texto: "Abre «Ajustes» en el menú lateral (o el engranaje de cada pantalla), elige Gemini u OpenAI y pega su clave. Se guarda en tu navegador y, si tienes una carpeta local elegida, también en un archivo ajustes.json de esa carpeta. Cada persona que use la app pone la suya. Nota: la transcripción con OpenAI (Whisper) no separa hablantes ni reconoce tu voz.",
       },
       {
         titulo: "Elige tu carpeta (opcional pero recomendado)",
@@ -274,7 +274,7 @@ const SECCIONES = [
       },
       {
         titulo: "Extrae acciones al Kanban",
-        texto: "El botón «Extraer acciones al Kanban» envía la nota a Gemini y convierte lo accionable en tarjetas de la «Bandeja de entrada», con aviso de confirmación.",
+        texto: "El botón «Extraer acciones al Kanban» envía la nota a la IA y convierte lo accionable en tarjetas de la «Bandeja de entrada», con aviso de confirmación.",
       },
     ],
     tips: [
@@ -313,7 +313,7 @@ const SECCIONES = [
     intro: "Redacta correos con IA y diseño de marca, listos para pegar en Outlook.",
     pasos: [
       {
-        titulo: "Redacta con Gemini",
+        titulo: "Redacta con IA",
         texto: "Describe el correo que necesitas («aviso de cambio de horario a los vecinos…») y la IA lo redacta con asunto y cuerpo.",
       },
       {
@@ -365,7 +365,7 @@ const SECCIONES = [
       },
       {
         titulo: "Los archivos .json",
-        texto: "En tu carpeta verás archivos como tareas.json, notas.json, correo.json y ajustes.json (con tu clave de Gemini). Son texto legible: puedes abrirlos, copiarlos a otro ordenador o archivarlos como copia de seguridad.",
+        texto: "En tu carpeta verás archivos como tareas.json, notas.json, correo.json y ajustes.json (con tus claves de IA). Son texto legible: puedes abrirlos, copiarlos a otro ordenador o archivarlos como copia de seguridad.",
       },
       {
         titulo: "Cambiar o soltar la carpeta",
@@ -373,7 +373,7 @@ const SECCIONES = [
       },
     ],
     tips: [
-      "Tu clave de Gemini solo sale de tu equipo para hablar con los servidores de Google. Nunca pasa por Lovable ni por terceros.",
+      "Tu clave de IA solo se usa para llamar a Google (Gemini) u OpenAI. Viaja a través de la función de servidor de la app al hacer cada petición, pero no se guarda en ningún servidor.",
     ],
   },
   {
@@ -490,7 +490,7 @@ function AyudaPage() {
         <footer className="mt-8 rounded-2xl border border-dashed border-border p-5 text-center">
           <p className="text-sm text-muted-foreground">
             ¿Atascado? Recuerda: <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] font-semibold">Ctrl+K</kbd>{" "}
-            busca en toda la app, y el engranaje de cada pantalla guarda tu clave de Gemini.
+            busca en toda la app, y el engranaje de cada pantalla guarda tu clave de IA.
           </p>
         </footer>
       </div>

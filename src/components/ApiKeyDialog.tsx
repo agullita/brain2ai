@@ -12,10 +12,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { getGeminiKey, saveKeyToFolder, setGeminiKey, syncKeyWithFolder } from "@/lib/apiKey";
+import {
+  PROVIDER_LABEL,
+  getAiKey,
+  getAiProvider,
+  saveSettingsToFolder,
+  setAiKey,
+  setAiProvider,
+  syncSettingsWithFolder,
+  type AiProvider,
+} from "@/lib/apiKey";
+
+const PROVIDERS: AiProvider[] = ["gemini", "openai"];
 
 /**
- * Diálogo para que cada usuario introduzca su propia clave de Gemini.
+ * Diálogo de ajustes de IA: elige el proveedor (Gemini u OpenAI) y guarda su clave.
  * Se guarda en el navegador y, si hay carpeta local, en su `ajustes.json`.
  */
 export function ApiKeyDialog({
@@ -25,6 +36,7 @@ export function ApiKeyDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const [provider, setProvider] = useState<AiProvider>("gemini");
   const [value, setValue] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,38 +49,47 @@ export function ApiKeyDialog({
       const { getDirHandle } = await import("@/lib/folder");
       const dir = await getDirHandle();
       setFolderName(dir?.name ?? null);
-      await syncKeyWithFolder();
-      setHasKey(Boolean(getGeminiKey()));
+      await syncSettingsWithFolder();
+      const current = getAiProvider();
+      setProvider(current);
+      setHasKey(Boolean(getAiKey(current)));
     })();
   }, [open]);
 
+  function choose(next: AiProvider) {
+    setProvider(next);
+    setValue("");
+    setHasKey(Boolean(getAiKey(next)));
+  }
+
   async function save() {
     const k = value.trim();
-    if (!k) {
-      toast.error("Escribe tu clave de Gemini");
+    if (!k && !getAiKey(provider)) {
+      toast.error(`Escribe tu clave de ${PROVIDER_LABEL[provider]}`);
       return;
     }
     setBusy(true);
-    setGeminiKey(k);
-    const savedToFolder = await saveKeyToFolder(k);
+    setAiProvider(provider);
+    if (k) setAiKey(provider, k);
+    const savedToFolder = await saveSettingsToFolder();
     setBusy(false);
-    setHasKey(true);
     setValue("");
+    setHasKey(Boolean(getAiKey(provider)));
     onOpenChange(false);
     toast.success(
       savedToFolder
-        ? `Clave guardada en tu carpeta (${folderName ?? "ajustes.json"})`
-        : "Clave guardada en este navegador",
+        ? `Clave de ${PROVIDER_LABEL[provider]} guardada en tu carpeta (${folderName ?? "ajustes.json"})`
+        : `Clave de ${PROVIDER_LABEL[provider]} guardada en este navegador`,
     );
   }
 
   async function remove() {
     setBusy(true);
-    setGeminiKey(null);
-    await saveKeyToFolder(null);
+    setAiKey(provider, null);
+    await saveSettingsToFolder();
     setBusy(false);
     setHasKey(false);
-    toast("Clave borrada");
+    toast(`Clave de ${PROVIDER_LABEL[provider]} borrada`);
   }
 
   return (
@@ -77,14 +98,32 @@ export function ApiKeyDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="size-4 text-primary" />
-            Tu clave de Gemini
+            Clave de IA
           </DialogTitle>
           <DialogDescription>
-            Hace falta para transcribir, resumir y redactar con IA. Consíguela gratis en{" "}
-            <span className="font-medium text-foreground">aistudio.google.com</span> → «Get API
-            key».
+            Elige el proveedor y pega tu clave. Se usará para transcribir, resumir, extraer tareas y
+            redactar correos.
           </DialogDescription>
         </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-2">
+          {PROVIDERS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => choose(p)}
+              className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                provider === p
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {PROVIDER_LABEL[p]}
+              {getAiKey(p) ? " · ✓" : ""}
+            </button>
+          ))}
+        </div>
+
         <Input
           type="password"
           autoComplete="off"
@@ -95,10 +134,11 @@ export function ApiKeyDialog({
           }}
           placeholder={
             hasKey
-              ? "Clave guardada · escribe otra para cambiarla"
-              : "Pega aquí tu clave de API de Gemini"
+              ? `Clave de ${PROVIDER_LABEL[provider]} guardada · escribe otra para cambiarla`
+              : `Pega aquí tu clave de ${PROVIDER_LABEL[provider]}`
           }
         />
+
         <p className="flex items-start gap-2 rounded-lg bg-muted/50 p-2.5 text-xs text-muted-foreground">
           <FolderOpen className="mt-0.5 size-3.5 shrink-0" />
           {folderName ? (
@@ -114,6 +154,14 @@ export function ApiKeyDialog({
             </span>
           )}
         </p>
+
+        {provider === "openai" && (
+          <p className="text-xs text-muted-foreground">
+            OpenAI transcribe con Whisper: no separa hablantes ni reconoce tu voz (eso solo lo hace
+            Gemini). Las actas, tareas y correos funcionan igual.
+          </p>
+        )}
+
         <DialogFooter className="gap-2 sm:justify-between">
           {hasKey ? (
             <Button variant="ghost" onClick={() => void remove()} disabled={busy}>

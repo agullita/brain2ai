@@ -41,8 +41,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { transcribeChunk } from "@/lib/ai.functions";
-import { getGeminiKey, openApiKeySettings } from "@/lib/apiKey";
+import { aiChat, transcribeChunk } from "@/lib/ai.functions";
+import { getActiveKey, getAiProvider, openApiKeySettings } from "@/lib/apiKey";
 import { getDirHandle, writeMeetingToFolder } from "@/lib/folder";
 import { saveMeeting, type Meeting } from "@/lib/idb";
 import { startRecording, type RecorderHandle } from "@/lib/recorder";
@@ -109,6 +109,7 @@ function SecondBrain() {
 
   // Panel de grabación (Lienzo de Reunión)
   const doTranscribe = useServerFn(transcribeChunk);
+  const doChat = useServerFn(aiChat);
   const [panel, setPanel] = useState(true);
   const [preview, setPreview] = useState(true);
   const [recording, setRecording] = useState(false);
@@ -294,9 +295,10 @@ function SecondBrain() {
 
   async function extractToKanban() {
     if (!active) return;
-    const key = getGeminiKey();
-    if (!key) {
-      toast.error("Configura tu clave de Gemini en Ajustes");
+    const provider = getAiProvider();
+    const apiKey = getActiveKey();
+    if (!apiKey) {
+      toast.error(`Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} en Ajustes`);
       openApiKeySettings();
       return;
     }
@@ -306,48 +308,23 @@ function SecondBrain() {
     }
     setBusy(true);
     try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: `Extrae de estas notas únicamente las tareas ejecutables. Devuelve un array JSON con title y description, sin texto adicional.\n\n${active.content}`,
-                  },
-                ],
-              },
-            ],
-          }),
+      const res = await doChat({
+        data: {
+          provider,
+          apiKey,
+          label: "Extraer tareas",
+          prompt: `Extrae de estas notas únicamente las tareas ejecutables. Devuelve un array JSON con title y description, sin texto adicional.\n\n${active.content}`,
         },
-      );
-      if (!res.ok) {
-        const msg =
-          res.status === 403
-            ? "Tu clave de Gemini no tiene permiso."
-            : res.status === 429
-              ? "Has superado el límite de Gemini. Inténtalo en unos minutos."
-              : `Gemini devolvió un error (${res.status}).`;
-        toast.error(msg);
-        return;
-      }
-      const data = (await res.json()) as {
-        candidates?: { content?: { parts?: { text?: string }[] } }[];
-      };
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-      const tasks = parseTasksFromText(text);
+      });
+      const tasks = parseTasksFromText(res.text);
       if (!tasks.length) {
         toast.error("La IA no encontró acciones concretas en esta nota.");
         return;
       }
       const n = await addCardsToInbox(tasks);
       toast.success(`${n} tareas enviadas a la Bandeja de Entrada`);
-    } catch {
-      toast.error("No se pudo conectar con Gemini.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo conectar con la IA.");
     } finally {
       setBusy(false);
     }
@@ -366,9 +343,16 @@ function SecondBrain() {
     chainRef.current = chainRef.current.then(async () => {
       try {
         const audio = await blobToBase64(wav);
-        const apiKey = getGeminiKey();
+        const provider = getAiProvider();
+        const apiKey = getActiveKey();
         const res = await doTranscribe({
-          data: { audio, speakers: true, ...(apiKey ? { apiKey } : {}) },
+          data: {
+            provider,
+            audio,
+            mime: "audio/wav",
+            speakers: provider === "gemini",
+            ...(apiKey ? { apiKey } : {}),
+          },
         });
         const text = res.text.trim();
         if (text) {
@@ -405,12 +389,13 @@ function SecondBrain() {
     setLive(liveRef.current);
   }
 
-  /** Combina las notas manuales y la transcripción en un acta final con Gemini. */
+  /** Combina las notas manuales y la transcripción en un acta final con IA. */
   async function synthesize() {
     if (!active) return;
-    const key = getGeminiKey();
-    if (!key) {
-      toast.error("Configura tu clave de Gemini en Ajustes");
+    const provider = getAiProvider();
+    const apiKey = getActiveKey();
+    if (!apiKey) {
+      toast.error(`Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} en Ajustes`);
       openApiKeySettings();
       return;
     }
@@ -423,33 +408,15 @@ function SecondBrain() {
     setSynthing(true);
     try {
       const prompt = `A continuación te proporciono dos fuentes de información de una reunión: 1. Las notas manuales del usuario (las prioridades). 2. La transcripción bruta del audio. Crea un acta final estructurada en HTML usando las notas como estructura principal y rellenando los detalles técnicos con el audio.\n\nFUENTE 1 — Notas manuales del usuario:\n${active.content || "(ninguna)"}\n\nFUENTE 2 — Transcripción bruta del audio:\n${transcript.slice(0, 120000) || "(ninguna)"}\n\nDevuelve solo el HTML del acta (sin \`\`\`), en español. Al final, añade además las acciones ejecutables como un array JSON con este formato exacto:\n\`\`\`json\n[{"title": "Acción en infinitivo", "description": "Contexto breve"}]\n\`\`\`\nSi no hay acciones, devuelve [].`;
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }] }),
-        },
-      );
-      if (!res.ok) {
-        toast.error(
-          res.status === 403
-            ? "Tu clave de Gemini no tiene permiso."
-            : res.status === 429
-              ? "Has superado el límite de Gemini. Inténtalo en unos minutos."
-              : `Gemini devolvió un error (${res.status}).`,
-        );
-        return;
-      }
-      const data = (await res.json()) as {
-        candidates?: { content?: { parts?: { text?: string }[] } }[];
-      };
-      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      const chatRes = await doChat({
+        data: { provider, apiKey, label: "Sintetizar acta", prompt },
+      });
+      const raw = chatRes.text;
       const html = stripTaskBlock(raw)
         .replace(/```(?:html)?/g, "")
         .trim();
       if (!html) {
-        toast.error("Gemini no devolvió ningún acta.");
+        toast.error("La IA no devolvió ningún acta.");
         return;
       }
       const transcriptBlock = transcript
@@ -482,8 +449,8 @@ function SecondBrain() {
         const n = await addCardsToInbox(tasks);
         toast.success(`${n} tareas enviadas a la Bandeja de Entrada`);
       }
-    } catch {
-      toast.error("No se pudo conectar con Gemini.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo conectar con la IA.");
     } finally {
       setSynthing(false);
     }

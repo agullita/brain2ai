@@ -47,7 +47,7 @@ import { clearVoiceSample, getVoiceSample, recordVoiceSample } from "@/lib/voice
 import { getDirHandle, writeMeetingToFolder } from "@/lib/folder";
 import { addCardsToInbox } from "@/lib/tasks";
 import type { ExtractedTask } from "@/lib/tasks-parse";
-import { getGeminiKey, openApiKeySettings } from "@/lib/apiKey";
+import { getActiveKey, getAiProvider, openApiKeySettings, type AiProvider } from "@/lib/apiKey";
 
 /** Contenido del acta (y transcripción) como HTML para exportar a PDF/Word. */
 function meetingExportHtml(m: Meeting): string {
@@ -145,15 +145,18 @@ function Index() {
     if (has) setSpeakers(true);
   }, []);
 
-  /** Devuelve la clave del usuario o abre Ajustes si falta. */
-  function requireKey(): string | null {
-    const key = getGeminiKey();
+  /** Devuelve el proveedor y su clave, o abre Ajustes si falta la clave. */
+  function requireKey(): { provider: AiProvider; key: string } | null {
+    const provider = getAiProvider();
+    const key = getActiveKey();
     if (!key) {
-      toast.error("Configura tu clave de Gemini para usar la IA");
+      toast.error(
+        `Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} para usar la IA`,
+      );
       openApiKeySettings();
       return null;
     }
-    return key;
+    return { provider, key };
   }
 
   async function calibrate() {    setCalibrating(true);
@@ -193,13 +196,17 @@ function Index() {
     chainRef.current = chainRef.current.then(async () => {
       try {
         const audio = await blobToBase64(wav);
-        const sample = speakers ? (getVoiceSample() ?? undefined) : undefined;
-        const apiKey = getGeminiKey();
+        const provider = getAiProvider();
+        const apiKey = getActiveKey();
+        const sample =
+          provider === "gemini" && speakers ? (getVoiceSample() ?? undefined) : undefined;
         const res = await doTranscribe({
           data: {
+            provider,
             audio,
+            mime: "audio/wav",
             ...(sample ? { sample } : {}),
-            speakers,
+            speakers: provider === "gemini" ? speakers : false,
             ...(apiKey ? { apiKey } : {}),
           },
         });
@@ -316,16 +323,17 @@ function Index() {
       toast.error("Esta reunión no tiene transcripción.");
       return;
     }
-    const key = requireKey();
-    if (!key) return;
-    setBusy("Redactando el acta…");
+    const cred = requireKey();
+    if (!cred) return;
+    setBusy("Redactando el acta.");
     try {
       const res = await doSummarize({
         data: {
+          provider: cred.provider,
           transcript: m.transcript,
           notes: m.notes.map((n) => `[${formatDuration(n.t)}] ${n.text}`).join("\n"),
           style,
-          apiKey: key,
+          apiKey: cred.key,
         },
       });
       await saveMeeting({ ...m, summary: res.summary });
@@ -344,18 +352,19 @@ function Index() {
   }
 
   async function extractTasks(m: Meeting) {
-    const key = requireKey();
-    if (!key) return;
-    setBusy("Buscando tareas en la reunión…");
+    const cred = requireKey();
+    if (!cred) return;
+    setBusy("Buscando tareas en la reunión.");
     try {
       let tasks = tasksById[m.id];
       if (!tasks) {
         const res = await doSummarize({
           data: {
+            provider: cred.provider,
             transcript: m.transcript,
             notes: m.notes.map((n) => `[${formatDuration(n.t)}] ${n.text}`).join("\n"),
             style,
-            apiKey: key,
+            apiKey: cred.key,
           },
         });
         tasks = res.tasks;
@@ -373,11 +382,13 @@ function Index() {
 
   async function ask(m: Meeting) {
     if (!question.trim()) return;
-    const key = requireKey();
-    if (!key) return;
-    setBusy("Buscando en la transcripción…");
+    const cred = requireKey();
+    if (!cred) return;
+    setBusy("Buscando en la transcripción.");
     try {
-      const res = await doAsk({ data: { transcript: m.transcript, question, apiKey: key } });
+      const res = await doAsk({
+        data: { provider: cred.provider, transcript: m.transcript, question, apiKey: cred.key },
+      });
       setAnswer(res.answer);
       setQuestion("");
     } catch (e) {

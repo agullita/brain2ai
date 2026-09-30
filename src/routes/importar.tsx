@@ -19,7 +19,7 @@ import { summarizeMeeting } from "@/lib/ai.functions";
 import { saveMeeting, type Meeting } from "@/lib/idb";
 import { getDirHandle, writeMeetingToFolder } from "@/lib/folder";
 import { addCardsToInbox } from "@/lib/tasks";
-import { getGeminiKey, openApiKeySettings } from "@/lib/apiKey";
+import { getActiveKey, getAiProvider, openApiKeySettings } from "@/lib/apiKey";
 
 export const Route = createFileRoute("/importar")({
   head: () => ({
@@ -100,15 +100,16 @@ function Importar() {
       toast.error("Pega primero la transcripción de la reunión.");
       return;
     }
-    const apiKey = getGeminiKey();
+    const provider = getAiProvider();
+    const apiKey = getActiveKey();
     if (!apiKey) {
-      toast.error("Configura tu clave de Gemini en Ajustes");
+      toast.error(`Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} en Ajustes`);
       openApiKeySettings();
       return;
     }
     setBusy(true);
     try {
-      const res = await doSummarize({ data: { transcript, notes: "", style, apiKey } });
+      const res = await doSummarize({ data: { provider, transcript, notes: "", style, apiKey } });
       const meeting: Meeting = {
         id: crypto.randomUUID(),
         title: title.trim() || `Transcripción importada ${new Date().toLocaleDateString("es-ES")}`,

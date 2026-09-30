@@ -29,8 +29,8 @@ import { folderSupported, getDirHandle, pickFolder, setDirHandle } from "@/lib/f
 import {
   KEY_CHANGED_EVENT,
   OPEN_SETTINGS_EVENT,
-  getGeminiKey,
-  syncKeyWithFolder,
+  getActiveKey,
+  syncSettingsWithFolder,
 } from "@/lib/apiKey";
 
 const COLLAPSED_KEY = "acta-local-menu-collapsed";
@@ -59,7 +59,7 @@ export function AppMenu() {
   const restoreRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const syncKey = () => setHasKey(Boolean(getGeminiKey()));
+    const syncKey = () => setHasKey(Boolean(getActiveKey()));
     syncKey();
     window.addEventListener(KEY_CHANGED_EVENT, syncKey);
     return () => window.removeEventListener(KEY_CHANGED_EVENT, syncKey);
@@ -73,8 +73,8 @@ export function AppMenu() {
 
   // La carpeta local es la fuente de la clave: al arrancar y al cambiarla.
   useEffect(() => {
-    void syncKeyWithFolder();
-    const onFolder = () => void syncKeyWithFolder();
+    void syncSettingsWithFolder();
+    const onFolder = () => void syncSettingsWithFolder();
     window.addEventListener("acta-folder", onFolder);
     return () => window.removeEventListener("acta-folder", onFolder);
   }, []);
