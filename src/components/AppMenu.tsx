@@ -29,7 +29,8 @@ import { folderSupported, getDirHandle, pickFolder, setDirHandle } from "@/lib/f
 import {
   KEY_CHANGED_EVENT,
   OPEN_SETTINGS_EVENT,
-  getActiveKey,
+  getAiProvider,
+  providerReady,
   syncSettingsWithFolder,
 } from "@/lib/apiKey";
 
@@ -59,7 +60,7 @@ export function AppMenu() {
   const restoreRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const syncKey = () => setHasKey(Boolean(getActiveKey()));
+    const syncKey = () => setHasKey(providerReady(getAiProvider()));
     syncKey();
     window.addEventListener(KEY_CHANGED_EVENT, syncKey);
     return () => window.removeEventListener(KEY_CHANGED_EVENT, syncKey);
