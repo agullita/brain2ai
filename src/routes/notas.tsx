@@ -42,7 +42,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { aiChat, transcribeChunk } from "@/lib/ai.functions";
-import { getActiveKey, getAiProvider, openApiKeySettings } from "@/lib/apiKey";
+import {
+  PROVIDER_LABEL,
+  getActiveAccountId,
+  getActiveKey,
+  getAiProvider,
+  openApiKeySettings,
+} from "@/lib/apiKey";
 import { getDirHandle, writeMeetingToFolder } from "@/lib/folder";
 import { saveMeeting, type Meeting } from "@/lib/idb";
 import { startRecording, type RecorderHandle } from "@/lib/recorder";
@@ -298,7 +304,7 @@ function SecondBrain() {
     const provider = getAiProvider();
     const apiKey = getActiveKey();
     if (!apiKey) {
-      toast.error(`Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} en Ajustes`);
+      toast.error(`Configura tu credencial de ${PROVIDER_LABEL[provider]} en Ajustes`);
       openApiKeySettings();
       return;
     }
@@ -308,10 +314,12 @@ function SecondBrain() {
     }
     setBusy(true);
     try {
+      const accountId = getActiveAccountId();
       const res = await doChat({
         data: {
           provider,
           apiKey,
+          ...(accountId ? { accountId } : {}),
           label: "Extraer tareas",
           prompt: `Extrae de estas notas únicamente las tareas ejecutables. Devuelve un array JSON con title y description, sin texto adicional.\n\n${active.content}`,
         },
@@ -345,6 +353,7 @@ function SecondBrain() {
         const audio = await blobToBase64(wav);
         const provider = getAiProvider();
         const apiKey = getActiveKey();
+        const accountId = getActiveAccountId();
         const res = await doTranscribe({
           data: {
             provider,
@@ -352,6 +361,7 @@ function SecondBrain() {
             mime: "audio/wav",
             speakers: provider === "gemini",
             ...(apiKey ? { apiKey } : {}),
+            ...(accountId ? { accountId } : {}),
           },
         });
         const text = res.text.trim();
@@ -395,7 +405,7 @@ function SecondBrain() {
     const provider = getAiProvider();
     const apiKey = getActiveKey();
     if (!apiKey) {
-      toast.error(`Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} en Ajustes`);
+      toast.error(`Configura tu credencial de ${PROVIDER_LABEL[provider]} en Ajustes`);
       openApiKeySettings();
       return;
     }
@@ -408,8 +418,15 @@ function SecondBrain() {
     setSynthing(true);
     try {
       const prompt = `A continuación te proporciono dos fuentes de información de una reunión: 1. Las notas manuales del usuario (las prioridades). 2. La transcripción bruta del audio. Crea un acta final estructurada en HTML usando las notas como estructura principal y rellenando los detalles técnicos con el audio.\n\nFUENTE 1 — Notas manuales del usuario:\n${active.content || "(ninguna)"}\n\nFUENTE 2 — Transcripción bruta del audio:\n${transcript.slice(0, 120000) || "(ninguna)"}\n\nDevuelve solo el HTML del acta (sin \`\`\`), en español. Al final, añade además las acciones ejecutables como un array JSON con este formato exacto:\n\`\`\`json\n[{"title": "Acción en infinitivo", "description": "Contexto breve"}]\n\`\`\`\nSi no hay acciones, devuelve [].`;
+      const accountId = getActiveAccountId();
       const chatRes = await doChat({
-        data: { provider, apiKey, label: "Sintetizar acta", prompt },
+        data: {
+          provider,
+          apiKey,
+          ...(accountId ? { accountId } : {}),
+          label: "Sintetizar acta",
+          prompt,
+        },
       });
       const raw = chatRes.text;
       const html = stripTaskBlock(raw)

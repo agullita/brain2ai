@@ -1,10 +1,10 @@
 // Copia de seguridad de toda la información local (sin salir del ordenador).
 
 import { deleteMeeting, listMeetings, saveMeeting } from "@/lib/idb";
-import { GEMINI_KEY_LS, OPENAI_KEY_LS } from "@/lib/apiKey";
+import { CF_KEY_LS, GEMINI_KEY_LS, OPENAI_KEY_LS } from "@/lib/apiKey";
 
-// Las claves de IA nunca entran en la copia de seguridad.
-const SECRET_KEYS = new Set([GEMINI_KEY_LS, OPENAI_KEY_LS]);
+// Las credenciales de IA nunca entran en la copia de seguridad.
+const SECRET_KEYS = new Set([GEMINI_KEY_LS, OPENAI_KEY_LS, CF_KEY_LS]);
 
 export type Backup = {
   app: "acta-local";

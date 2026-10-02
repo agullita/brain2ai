@@ -1,40 +1,66 @@
 import { createServerFn } from "@tanstack/react-start";
 import { parseTasksFromText, stripTaskBlock } from "@/lib/tasks-parse";
 
-// Transcripción, actas y preguntas con la API propia del usuario (Gemini u OpenAI).
+// Transcripción, actas y preguntas con la API propia del usuario
+// (Gemini, OpenAI o Cloudflare Workers AI).
 
-export type AiProvider = "gemini" | "openai";
+export type AiProvider = "gemini" | "openai" | "cloudflare";
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
 const GEMINI_MODEL = process.env["GEMINI_MODEL"] || "gemini-3.5-flash-lite";
 const GEMINI_API = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
+const OPENAI_BASE = "https://api.openai.com/v1";
 const OPENAI_CHAT_MODEL = process.env["OPENAI_MODEL"] || "gpt-4o-mini";
 const OPENAI_STT_MODEL = process.env["OPENAI_STT_MODEL"] || "whisper-1";
-const OPENAI_CHAT_API = "https://api.openai.com/v1/chat/completions";
-const OPENAI_STT_API = "https://api.openai.com/v1/audio/transcriptions";
+
+const CF_CHAT_MODEL = process.env["CF_CHAT_MODEL"] || "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
+const CF_STT_MODEL = process.env["CF_STT_MODEL"] || "@cf/openai/whisper-large-v3-turbo";
 
 function normalizeProvider(p: string | undefined): AiProvider {
-  return p === "openai" ? "openai" : "gemini";
+  if (p === "openai" || p === "cloudflare") return p;
+  return "gemini";
 }
 
 function resolveKey(provider: AiProvider, apiKey?: string): string {
-  const key =
-    apiKey?.trim() ||
-    (provider === "openai" ? process.env["OPENAI_API_KEY"] : process.env["GEMINI_API_KEY"]);
-  if (!key)
-    throw new Error(
-      provider === "openai"
-        ? "Falta tu clave de OpenAI. Pégala en Ajustes (menú lateral → Ajustes)."
-        : "Falta tu clave de Gemini. Pégala en Ajustes (menú lateral → Ajustes).",
-    );
+  const envFallback =
+    provider === "openai"
+      ? process.env["OPENAI_API_KEY"]
+      : provider === "cloudflare"
+        ? process.env["CLOUDFLARE_API_TOKEN"]
+        : process.env["GEMINI_API_KEY"];
+  const key = apiKey?.trim() || envFallback;
+  if (!key) throw new Error(`Falta tu credencial de ${labelOf(provider)}. Pégala en Ajustes.`);
   return key;
+}
+
+function resolveAccountId(accountId?: string): string {
+  const id = accountId?.trim() || process.env["CLOUDFLARE_ACCOUNT_ID"];
+  if (!id) throw new Error("Falta el Account ID de Cloudflare. Pégalo en Ajustes.");
+  return id;
+}
+
+function labelOf(provider: AiProvider): string {
+  return provider === "openai" ? "OpenAI" : provider === "cloudflare" ? "Cloudflare" : "Gemini";
 }
 
 async function assertOk(res: Response, label: string, provider: AiProvider): Promise<void> {
   if (res.ok) return;
   const detail = await res.text().catch(() => "");
+
+  if (provider === "gemini") {
+    if (res.status === 400 && /api key/i.test(detail))
+      throw new Error("La clave de Gemini no es válida.");
+    if (res.status === 403)
+      throw new Error("La clave de Gemini no es válida o no tiene la API activada.");
+    if (res.status === 429)
+      throw new Error(
+        "Has llegado al límite de tu cuenta de Gemini (revisa la facturación o inténtalo más tarde).",
+      );
+    throw new Error(`${label} (${res.status}): ${detail.slice(0, 300)}`);
+  }
+
   if (provider === "openai") {
     if (res.status === 401) throw new Error("La clave de OpenAI no es válida.");
     if (res.status === 403)
@@ -45,13 +71,15 @@ async function assertOk(res: Response, label: string, provider: AiProvider): Pro
       );
     throw new Error(`${label} (${res.status}): ${detail.slice(0, 300)}`);
   }
-  if (res.status === 400 && /api key/i.test(detail))
-    throw new Error("La clave de Gemini no es válida.");
+
+  // Cloudflare Workers AI
+  if (res.status === 401)
+    throw new Error("La API token o el Account ID de Cloudflare no son válidos.");
   if (res.status === 403)
-    throw new Error("La clave de Gemini no es válida o no tiene la API activada.");
+    throw new Error("Tu API token de Cloudflare no tiene permiso para Workers AI.");
   if (res.status === 429)
     throw new Error(
-      "Has llegado al límite de tu cuenta de Gemini (revisa la facturación o inténtalo más tarde).",
+      "Has agotado el cupo gratuito diario de Cloudflare Workers AI o hay demasiada demanda. Inténtalo más tarde.",
     );
   throw new Error(`${label} (${res.status}): ${detail.slice(0, 300)}`);
 }
@@ -89,33 +117,36 @@ async function geminiCall(
   return json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
 }
 
-// ---------- OpenAI ----------
+// ---------- OpenAI / Cloudflare (chat compatible OpenAI) ----------
 
-async function openaiChat(
-  prompt: string,
-  system: string | undefined,
-  apiKey: string | undefined,
-  label: string,
-): Promise<string> {
-  const key = resolveKey("openai", apiKey);
-  const res = await fetch(OPENAI_CHAT_API, {
+async function oaChat(opts: {
+  base: string;
+  model: string;
+  apiKey: string;
+  prompt: string;
+  system?: string | undefined;
+  label: string;
+}): Promise<string> {
+  const res = await fetch(`${opts.base}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${opts.apiKey}` },
     body: JSON.stringify({
-      model: OPENAI_CHAT_MODEL,
+      model: opts.model,
       messages: [
-        ...(system ? [{ role: "system", content: system }] : []),
-        { role: "user", content: prompt },
+        ...(opts.system ? [{ role: "system", content: opts.system }] : []),
+        { role: "user", content: opts.prompt },
       ],
       temperature: 0.3,
     }),
   });
-  await assertOk(res, label, "openai");
+  await assertOk(res, opts.label, opts.base.includes("cloudflare") ? "cloudflare" : "openai");
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
   };
   return data.choices?.[0]?.message?.content ?? "";
 }
+
+// ---------- OpenAI ----------
 
 async function openaiTranscribe(
   audioBase64: string,
@@ -125,11 +156,14 @@ async function openaiTranscribe(
 ): Promise<string> {
   const key = resolveKey("openai", apiKey);
   const form = new FormData();
-  const bytes = base64ToBytes(audioBase64);
-  form.append("file", new Blob([bytes], { type: mime || "audio/wav" }), "audio.wav");
+  form.append(
+    "file",
+    new Blob([base64ToBytes(audioBase64)], { type: mime || "audio/wav" }),
+    "audio.wav",
+  );
   form.append("model", OPENAI_STT_MODEL);
   form.append("language", "es");
-  const res = await fetch(OPENAI_STT_API, {
+  const res = await fetch(`${OPENAI_BASE}/audio/transcriptions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}` },
     body: form,
@@ -139,6 +173,34 @@ async function openaiTranscribe(
   return data.text ?? "";
 }
 
+// ---------- Cloudflare Workers AI ----------
+
+async function cloudflareTranscribe(
+  audioBase64: string,
+  apiKey: string | undefined,
+  accountId: string | undefined,
+  label: string,
+): Promise<string> {
+  const key = resolveKey("cloudflare", apiKey);
+  const id = resolveAccountId(accountId);
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${id}/ai/run/${CF_STT_MODEL}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        audio: audioBase64,
+        task: "transcribe",
+        language: "es",
+        vad_filter: true,
+      }),
+    },
+  );
+  await assertOk(res, label, "cloudflare");
+  const data = (await res.json()) as { result?: { text?: string } };
+  return data.result?.text ?? "";
+}
+
 // ---------- Utilidades compartidas ----------
 
 async function callText(opts: {
@@ -146,11 +208,31 @@ async function callText(opts: {
   prompt: string;
   system?: string | undefined;
   apiKey?: string | undefined;
+  accountId?: string | undefined;
   label: string;
 }): Promise<string> {
-  return opts.provider === "openai"
-    ? openaiChat(opts.prompt, opts.system, opts.apiKey, opts.label)
-    : geminiCall([{ text: opts.prompt }], opts.system, opts.apiKey, opts.label);
+  if (opts.provider === "openai") {
+    return oaChat({
+      base: OPENAI_BASE,
+      model: OPENAI_CHAT_MODEL,
+      apiKey: resolveKey("openai", opts.apiKey),
+      prompt: opts.prompt,
+      system: opts.system,
+      label: opts.label,
+    });
+  }
+  if (opts.provider === "cloudflare") {
+    const id = resolveAccountId(opts.accountId);
+    return oaChat({
+      base: `https://api.cloudflare.com/client/v4/accounts/${id}/ai/v1`,
+      model: CF_CHAT_MODEL,
+      apiKey: resolveKey("cloudflare", opts.apiKey),
+      prompt: opts.prompt,
+      system: opts.system,
+      label: opts.label,
+    });
+  }
+  return geminiCall([{ text: opts.prompt }], opts.system, opts.apiKey, opts.label);
 }
 
 const ACTA_SYSTEM =
@@ -167,6 +249,7 @@ export const transcribeChunk = createServerFn({ method: "POST" })
       sample?: string;
       speakers?: boolean;
       apiKey?: string;
+      accountId?: string;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -177,6 +260,16 @@ export const transcribeChunk = createServerFn({ method: "POST" })
         data.audio,
         data.mime || "audio/wav",
         data.apiKey,
+        "Transcripción fallida",
+      );
+      return { text: text.trim() };
+    }
+
+    if (provider === "cloudflare") {
+      const text = await cloudflareTranscribe(
+        data.audio,
+        data.apiKey,
+        data.accountId,
         "Transcripción fallida",
       );
       return { text: text.trim() };
@@ -218,6 +311,7 @@ export const summarizeMeeting = createServerFn({ method: "POST" })
       notes: string;
       style: string;
       apiKey?: string;
+      accountId?: string;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -226,6 +320,7 @@ export const summarizeMeeting = createServerFn({ method: "POST" })
       provider,
       system: ACTA_SYSTEM,
       apiKey: data.apiKey,
+      accountId: data.accountId,
       label: "Resumen fallido",
       prompt: `Tipo de reunión: ${data.style}\n\nNotas marcadas por el usuario:\n${data.notes || "(ninguna)"}\n\nTranscripción:\n${data.transcript.slice(0, 120000)}`,
     });
@@ -234,7 +329,13 @@ export const summarizeMeeting = createServerFn({ method: "POST" })
 
 export const askMeeting = createServerFn({ method: "POST" })
   .inputValidator(
-    (data: { provider?: string; transcript: string; question: string; apiKey?: string }) => data,
+    (data: {
+      provider?: string;
+      transcript: string;
+      question: string;
+      apiKey?: string;
+      accountId?: string;
+    }) => data,
   )
   .handler(async ({ data }) => {
     const provider = normalizeProvider(data.provider);
@@ -243,6 +344,7 @@ export const askMeeting = createServerFn({ method: "POST" })
       system:
         "Respondes preguntas sobre la transcripción de una reunión. Responde en español, breve y concreto. Si la respuesta no está en la transcripción, dilo claramente.",
       apiKey: data.apiKey,
+      accountId: data.accountId,
       label: "Consulta fallida",
       prompt: `Transcripción:\n${data.transcript.slice(0, 120000)}\n\nPregunta: ${data.question}`,
     });
@@ -257,6 +359,7 @@ export const aiChat = createServerFn({ method: "POST" })
       prompt: string;
       system?: string;
       apiKey?: string;
+      accountId?: string;
       label?: string;
     }) => data,
   )
@@ -267,6 +370,7 @@ export const aiChat = createServerFn({ method: "POST" })
       prompt: data.prompt,
       ...(data.system ? { system: data.system } : {}),
       apiKey: data.apiKey,
+      accountId: data.accountId,
       label: data.label || "Consulta fallida",
     });
     return { text };

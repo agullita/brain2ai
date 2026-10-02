@@ -14,20 +14,23 @@ import {
 } from "@/components/ui/dialog";
 import {
   PROVIDER_LABEL,
-  getAiKey,
   getAiProvider,
+  getCfAccountId,
+  getAiKey,
+  providerReady,
   saveSettingsToFolder,
+  setAiAccountId,
   setAiKey,
   setAiProvider,
   syncSettingsWithFolder,
   type AiProvider,
 } from "@/lib/apiKey";
 
-const PROVIDERS: AiProvider[] = ["gemini", "openai"];
+const PROVIDERS: AiProvider[] = ["gemini", "openai", "cloudflare"];
 
 /**
- * Diálogo de ajustes de IA: elige el proveedor (Gemini u OpenAI) y guarda su clave.
- * Se guarda en el navegador y, si hay carpeta local, en su `ajustes.json`.
+ * Diálogo de ajustes de IA: elige el proveedor y guarda sus credenciales.
+ * Se guardan en el navegador y, si hay carpeta local, en su `ajustes.json`.
  */
 export function ApiKeyDialog({
   open,
@@ -38,6 +41,7 @@ export function ApiKeyDialog({
 }) {
   const [provider, setProvider] = useState<AiProvider>("gemini");
   const [value, setValue] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [folderName, setFolderName] = useState<string | null>(null);
@@ -45,6 +49,7 @@ export function ApiKeyDialog({
   useEffect(() => {
     if (!open) return;
     setValue("");
+    setAccountId("");
     void (async () => {
       const { getDirHandle } = await import("@/lib/folder");
       const dir = await getDirHandle();
@@ -52,44 +57,60 @@ export function ApiKeyDialog({
       await syncSettingsWithFolder();
       const current = getAiProvider();
       setProvider(current);
-      setHasKey(Boolean(getAiKey(current)));
+      setHasKey(providerReady(current));
     })();
   }, [open]);
 
   function choose(next: AiProvider) {
     setProvider(next);
     setValue("");
-    setHasKey(Boolean(getAiKey(next)));
+    setAccountId("");
+    setHasKey(providerReady(next));
   }
 
   async function save() {
     const k = value.trim();
-    if (!k && !getAiKey(provider)) {
+    const cfId = accountId.trim();
+
+    if (provider === "cloudflare") {
+      if (!k && !getAiKey("cloudflare")) {
+        toast.error("Escribe tu API Token de Cloudflare");
+        return;
+      }
+      if (!cfId && !getCfAccountId()) {
+        toast.error("Escribe tu Account ID de Cloudflare");
+        return;
+      }
+    } else if (!k && !getAiKey(provider)) {
       toast.error(`Escribe tu clave de ${PROVIDER_LABEL[provider]}`);
       return;
     }
+
     setBusy(true);
     setAiProvider(provider);
     if (k) setAiKey(provider, k);
+    if (provider === "cloudflare" && cfId) setAiAccountId("cloudflare", cfId);
     const savedToFolder = await saveSettingsToFolder();
     setBusy(false);
     setValue("");
-    setHasKey(Boolean(getAiKey(provider)));
+    setAccountId("");
+    setHasKey(providerReady(provider));
     onOpenChange(false);
     toast.success(
       savedToFolder
-        ? `Clave de ${PROVIDER_LABEL[provider]} guardada en tu carpeta (${folderName ?? "ajustes.json"})`
-        : `Clave de ${PROVIDER_LABEL[provider]} guardada en este navegador`,
+        ? `Ajustes de ${PROVIDER_LABEL[provider]} guardados en tu carpeta (${folderName ?? "ajustes.json"})`
+        : `Ajustes de ${PROVIDER_LABEL[provider]} guardados en este navegador`,
     );
   }
 
   async function remove() {
     setBusy(true);
     setAiKey(provider, null);
+    setAiAccountId(provider, null);
     await saveSettingsToFolder();
     setBusy(false);
     setHasKey(false);
-    toast(`Clave de ${PROVIDER_LABEL[provider]} borrada`);
+    toast(`Credenciales de ${PROVIDER_LABEL[provider]} borradas`);
   }
 
   return (
@@ -101,28 +122,42 @@ export function ApiKeyDialog({
             Clave de IA
           </DialogTitle>
           <DialogDescription>
-            Elige el proveedor y pega tu clave. Se usará para transcribir, resumir, extraer tareas y
-            redactar correos.
+            Elige el proveedor y guarda sus credenciales. Se usarán para transcribir, resumir,
+            extraer tareas y redactar correos.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {PROVIDERS.map((p) => (
             <button
               key={p}
               type="button"
               onClick={() => choose(p)}
-              className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+              className={`rounded-lg border px-2 py-2 text-sm font-medium transition-colors ${
                 provider === p
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
               {PROVIDER_LABEL[p]}
-              {getAiKey(p) ? " · ✓" : ""}
+              {providerReady(p) ? " ✓" : ""}
             </button>
           ))}
         </div>
+
+        {provider === "cloudflare" && (
+          <Input
+            type="text"
+            autoComplete="off"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            placeholder={
+              getCfAccountId()
+                ? "Account ID guardado · escribe otro para cambiarlo"
+                : "Account ID de Cloudflare"
+            }
+          />
+        )}
 
         <Input
           type="password"
@@ -134,8 +169,10 @@ export function ApiKeyDialog({
           }}
           placeholder={
             hasKey
-              ? `Clave de ${PROVIDER_LABEL[provider]} guardada · escribe otra para cambiarla`
-              : `Pega aquí tu clave de ${PROVIDER_LABEL[provider]}`
+              ? `Credencial de ${PROVIDER_LABEL[provider]} guardada · escribe otra para cambiarla`
+              : provider === "cloudflare"
+                ? "API Token de Cloudflare"
+                : `Pega aquí tu clave de ${PROVIDER_LABEL[provider]}`
           }
         />
 
@@ -162,10 +199,18 @@ export function ApiKeyDialog({
           </p>
         )}
 
+        {provider === "cloudflare" && (
+          <p className="text-xs text-muted-foreground">
+            Cloudflare Workers AI es gratis: 10.000 neurons/día (~3,5 h de transcripción). Consigue
+            el Account ID en el panel y un API Token con permiso «Workers AI». Whisper no separa
+            hablantes.
+          </p>
+        )}
+
         <DialogFooter className="gap-2 sm:justify-between">
           {hasKey ? (
             <Button variant="ghost" onClick={() => void remove()} disabled={busy}>
-              Borrar clave
+              Borrar
             </Button>
           ) : (
             <span />

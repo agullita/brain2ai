@@ -47,7 +47,14 @@ import { clearVoiceSample, getVoiceSample, recordVoiceSample } from "@/lib/voice
 import { getDirHandle, writeMeetingToFolder } from "@/lib/folder";
 import { addCardsToInbox } from "@/lib/tasks";
 import type { ExtractedTask } from "@/lib/tasks-parse";
-import { getActiveKey, getAiProvider, openApiKeySettings, type AiProvider } from "@/lib/apiKey";
+import {
+  PROVIDER_LABEL,
+  getActiveAccountId,
+  getActiveKey,
+  getAiProvider,
+  openApiKeySettings,
+  type AiProvider,
+} from "@/lib/apiKey";
 
 /** Contenido del acta (y transcripción) como HTML para exportar a PDF/Word. */
 function meetingExportHtml(m: Meeting): string {
@@ -145,18 +152,18 @@ function Index() {
     if (has) setSpeakers(true);
   }, []);
 
-  /** Devuelve el proveedor y su clave, o abre Ajustes si falta la clave. */
-  function requireKey(): { provider: AiProvider; key: string } | null {
+  /** Devuelve el proveedor y sus credenciales, o abre Ajustes si falta algo. */
+  function requireKey(): { provider: AiProvider; key: string; accountId: string | null } | null {
     const provider = getAiProvider();
     const key = getActiveKey();
     if (!key) {
       toast.error(
-        `Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} para usar la IA`,
+        `Configura tu ${provider === "cloudflare" ? "API Token" : "clave"} de ${PROVIDER_LABEL[provider]} para usar la IA`,
       );
       openApiKeySettings();
       return null;
     }
-    return { provider, key };
+    return { provider, key, accountId: getActiveAccountId() };
   }
 
   async function calibrate() {    setCalibrating(true);
@@ -198,6 +205,7 @@ function Index() {
         const audio = await blobToBase64(wav);
         const provider = getAiProvider();
         const apiKey = getActiveKey();
+        const accountId = getActiveAccountId();
         const sample =
           provider === "gemini" && speakers ? (getVoiceSample() ?? undefined) : undefined;
         const res = await doTranscribe({
@@ -208,6 +216,7 @@ function Index() {
             ...(sample ? { sample } : {}),
             speakers: provider === "gemini" ? speakers : false,
             ...(apiKey ? { apiKey } : {}),
+            ...(accountId ? { accountId } : {}),
           },
         });
         const text = res.text.trim();
@@ -365,6 +374,7 @@ function Index() {
             notes: m.notes.map((n) => `[${formatDuration(n.t)}] ${n.text}`).join("\n"),
             style,
             apiKey: cred.key,
+            ...(cred.accountId ? { accountId: cred.accountId } : {}),
           },
         });
         tasks = res.tasks;
@@ -387,7 +397,13 @@ function Index() {
     setBusy("Buscando en la transcripción.");
     try {
       const res = await doAsk({
-        data: { provider: cred.provider, transcript: m.transcript, question, apiKey: cred.key },
+        data: {
+          provider: cred.provider,
+          transcript: m.transcript,
+          question,
+          apiKey: cred.key,
+          ...(cred.accountId ? { accountId: cred.accountId } : {}),
+        },
       });
       setAnswer(res.answer);
       setQuestion("");

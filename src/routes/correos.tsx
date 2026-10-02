@@ -21,7 +21,14 @@ import {
   readJsonFromFolder,
   writeJsonToFolder,
 } from "@/lib/folder";
-import { getActiveKey, getAiProvider, KEY_CHANGED_EVENT, openApiKeySettings } from "@/lib/apiKey";
+import {
+  KEY_CHANGED_EVENT,
+  PROVIDER_LABEL,
+  getActiveAccountId,
+  getActiveKey,
+  getAiProvider,
+  openApiKeySettings,
+} from "@/lib/apiKey";
 import { aiChat } from "@/lib/ai.functions";
 
 export const Route = createFileRoute("/correos")({
@@ -226,7 +233,7 @@ function EmailCompiler() {
     const provider = getAiProvider();
     const apiKey = getActiveKey();
     if (!apiKey) {
-      toast.error(`Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} en Ajustes`);
+      toast.error(`Configura tu credencial de ${PROVIDER_LABEL[provider]} en Ajustes`);
       openApiKeySettings();
       return;
     }
@@ -236,10 +243,12 @@ function EmailCompiler() {
     }
     setBusy(true);
     try {
+      const accountId = getActiveAccountId();
       const res = await doChat({
         data: {
           provider,
           apiKey,
+          ...(accountId ? { accountId } : {}),
           label: "Redactar correo",
           prompt:
             "Actúa como un redactor corporativo. Escribe un correo profesional en formato HTML basado en esto: " +
@@ -261,7 +270,7 @@ function EmailCompiler() {
     const provider = getAiProvider();
     const apiKey = getActiveKey();
     if (!apiKey) {
-      toast.error(`Configura tu clave de ${provider === "openai" ? "OpenAI" : "Gemini"} en Ajustes`);
+      toast.error(`Configura tu credencial de ${PROVIDER_LABEL[provider]} en Ajustes`);
       openApiKeySettings();
       return;
     }
@@ -286,8 +295,15 @@ function EmailCompiler() {
         "PETICIÓN DE DISEÑO (puede ser una descripción o un HTML de ejemplo a imitar):",
         designPrompt,
       ].join("\n");
+      const accountId = getActiveAccountId();
       const res = await doChat({
-        data: { provider, apiKey, label: "Aplicar diseño", prompt: instruction },
+        data: {
+          provider,
+          apiKey,
+          ...(accountId ? { accountId } : {}),
+          label: "Aplicar diseño",
+          prompt: instruction,
+        },
       });
       const text = res.text
         .replace(/^```html\s*/i, "")

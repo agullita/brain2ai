@@ -119,11 +119,11 @@ const SECCIONES = [
     pasos: [
       {
         titulo: "Consigue tu clave de IA",
-        texto: "Elige proveedor: Gemini (Google AI Studio, aistudio.google.com → «Get API key», gratis) u OpenAI (platform.openai.com → API keys). Copia la clave.",
+        texto: "Elige proveedor: Gemini (Google AI Studio → «Get API key», gratis), OpenAI (platform.openai.com → API keys) o Cloudflare Workers AI (gratis, 10.000 neurons/día ≈ 3,5 h de transcripción). Para Cloudflare necesitas el Account ID y un API Token con permiso «Workers AI».",
       },
       {
         titulo: "Guárdala en la app",
-        texto: "Abre «Ajustes» en el menú lateral (o el engranaje de cada pantalla), elige Gemini u OpenAI y pega su clave. Se guarda en tu navegador y, si tienes una carpeta local elegida, también en un archivo ajustes.json de esa carpeta. Cada persona que use la app pone la suya. Nota: la transcripción con OpenAI (Whisper) no separa hablantes ni reconoce tu voz.",
+        texto: "Abre «Ajustes» en el menú lateral (o el engranaje de cada pantalla), elige Gemini, OpenAI o Cloudflare y pega sus credenciales. Se guardan en tu navegador y, si tienes una carpeta local elegida, también en un archivo ajustes.json de esa carpeta. Cada persona que use la app pone las suyas. Nota: la transcripción con OpenAI/Cloudflare (Whisper) no separa hablantes ni reconoce tu voz (eso solo lo hace Gemini).",
       },
       {
         titulo: "Elige tu carpeta (opcional pero recomendado)",
