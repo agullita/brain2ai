@@ -166,7 +166,8 @@ function Index() {
     return { provider, key, accountId: getActiveAccountId() };
   }
 
-  async function calibrate() {    setCalibrating(true);
+  async function calibrate() {
+    setCalibrating(true);
     try {
       await recordVoiceSample(8, setLevel);
       setHasVoice(true);
@@ -343,6 +344,7 @@ function Index() {
           notes: m.notes.map((n) => `[${formatDuration(n.t)}] ${n.text}`).join("\n"),
           style,
           apiKey: cred.key,
+          ...(cred.accountId ? { accountId: cred.accountId } : {}),
         },
       });
       await saveMeeting({ ...m, summary: res.summary });
