@@ -351,6 +351,21 @@ export const askMeeting = createServerFn({ method: "POST" })
     return { answer };
   });
 
+/** Comprueba que las credenciales del proveedor funcionan. */
+export const testConnection = createServerFn({ method: "POST" })
+  .inputValidator((data: { provider?: string; apiKey?: string; accountId?: string }) => data)
+  .handler(async ({ data }) => {
+    const provider = normalizeProvider(data.provider);
+    const text = await callText({
+      provider,
+      prompt: "Responde únicamente con la palabra: OK",
+      apiKey: data.apiKey,
+      accountId: data.accountId,
+      label: "Prueba de conexión",
+    });
+    return { text: text.trim().slice(0, 60) };
+  });
+
 /** Chat genérico para redactar correos, extraer tareas o sintetizar notas. */
 export const aiChat = createServerFn({ method: "POST" })
   .inputValidator(

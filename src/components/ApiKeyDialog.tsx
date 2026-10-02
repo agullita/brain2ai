@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { FolderOpen, KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,6 +26,7 @@ import {
   syncSettingsWithFolder,
   type AiProvider,
 } from "@/lib/apiKey";
+import { testConnection } from "@/lib/ai.functions";
 
 const PROVIDERS: AiProvider[] = ["gemini", "openai", "cloudflare"];
 
@@ -44,7 +46,9 @@ export function ApiKeyDialog({
   const [accountId, setAccountId] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [folderName, setFolderName] = useState<string | null>(null);
+  const doTest = useServerFn(testConnection);
 
   useEffect(() => {
     if (!open) return;
@@ -66,6 +70,34 @@ export function ApiKeyDialog({
     setValue("");
     setAccountId("");
     setHasKey(providerReady(next));
+  }
+
+  async function test() {
+    const k = value.trim() || getAiKey(provider);
+    const acc = provider === "cloudflare" ? accountId.trim() || getCfAccountId() : null;
+    if (!k) {
+      toast.error(`Escribe primero tus credenciales de ${PROVIDER_LABEL[provider]}`);
+      return;
+    }
+    if (provider === "cloudflare" && !acc) {
+      toast.error("Escribe tu Account ID de Cloudflare");
+      return;
+    }
+    setTesting(true);
+    try {
+      const res = await doTest({
+        data: {
+          provider,
+          ...(k ? { apiKey: k } : {}),
+          ...(acc ? { accountId: acc } : {}),
+        },
+      });
+      toast.success(`Conexión correcta con ${PROVIDER_LABEL[provider]} · respuesta: “${res.text}”`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo conectar");
+    } finally {
+      setTesting(false);
+    }
   }
 
   async function save() {
@@ -209,16 +241,22 @@ export function ApiKeyDialog({
 
         <DialogFooter className="gap-2 sm:justify-between">
           {hasKey ? (
-            <Button variant="ghost" onClick={() => void remove()} disabled={busy}>
+            <Button variant="ghost" onClick={() => void remove()} disabled={busy || testing}>
               Borrar
             </Button>
           ) : (
             <span />
           )}
-          <Button onClick={() => void save()} disabled={busy}>
-            {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            Guardar
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => void test()} disabled={busy || testing}>
+              {testing ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Probar
+            </Button>
+            <Button onClick={() => void save()} disabled={busy || testing}>
+              {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Guardar
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
